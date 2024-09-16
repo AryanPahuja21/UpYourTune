@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThumbsUp, Music, Play, LogOut, Share2, Plus } from "lucide-react";
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 
 // Mock data for initial queue
 const initialQueue = [
@@ -69,8 +70,7 @@ export default function StreamingPage() {
   };
 
   const handleLogout = () => {
-    // In a real app, you'd implement logout functionality here
-    alert("Logout functionality would be implemented here!");
+    signOut();
   };
 
   return (
@@ -90,7 +90,8 @@ export default function StreamingPage() {
               size="sm"
               className="text-purple-600 border-purple-300 hover:bg-purple-50"
             >
-              <Share2 className="mr-2 h-4 w-4" /> Share
+              <Share2 className="sm:mr-2 h-4 w-4" />{" "}
+              <p className="hidden sm:block">Share</p>
             </Button>
             <Button
               onClick={handleLogout}
@@ -98,7 +99,8 @@ export default function StreamingPage() {
               size="sm"
               className="text-pink-600 border-pink-300 hover:bg-pink-50"
             >
-              <LogOut className="mr-2 h-4 w-4" /> Logout
+              <LogOut className="sm:mr-2 h-4 w-4" />{" "}
+              <p className="hidden sm:block">Logout</p>
             </Button>
           </div>
         </div>
@@ -146,7 +148,8 @@ export default function StreamingPage() {
             type="submit"
             className="bg-green-500 hover:bg-green-600 text-white shadow-sm"
           >
-            <Plus className="mr-2 h-4 w-4" /> Add to Queue
+            <Plus className="sm:mr-2 h-4 w-4" />{" "}
+            <p className="hidden sm:block"> Add to Queue</p>
           </Button>
         </form>
 
@@ -180,7 +183,8 @@ export default function StreamingPage() {
                   size="sm"
                   className="text-purple-600 border-purple-300 hover:bg-purple-100 shadow-sm"
                 >
-                  <ThumbsUp className="mr-2 h-4 w-4" /> Vote
+                  <ThumbsUp className="sm:mr-2 h-4 w-4" />{" "}
+                  <p className="hidden sm:block">Vote</p>
                 </Button>
               </li>
             ))}
