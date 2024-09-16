@@ -1,0 +1,192 @@
+"use client";
+
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ThumbsUp, Music, Play, LogOut, Share2, Plus } from "lucide-react";
+import Link from "next/link";
+
+// Mock data for initial queue
+const initialQueue = [
+  {
+    id: 1,
+    title: "Bohemian Rhapsody - Queen",
+    votes: 5,
+    thumbnail: "/placeholder.svg?height=90&width=120",
+  },
+  {
+    id: 2,
+    title: "Imagine - John Lennon",
+    votes: 3,
+    thumbnail: "/placeholder.svg?height=90&width=120",
+  },
+  {
+    id: 3,
+    title: "Billie Jean - Michael Jackson",
+    votes: 4,
+    thumbnail: "/placeholder.svg?height=90&width=120",
+  },
+];
+
+export default function StreamingPage() {
+  const [queue, setQueue] = useState(initialQueue);
+  const [currentVideo, setCurrentVideo] = useState<any>(null);
+  const [newVideoUrl, setNewVideoUrl] = useState("");
+
+  const handleAddVideo = (e: any) => {
+    e.preventDefault();
+    // In a real app, you'd parse the YouTube URL and fetch video details
+    const newVideo = {
+      id: queue.length + 1,
+      title: `New Video ${queue.length + 1}`,
+      votes: 0,
+      thumbnail: "/placeholder.svg?height=90&width=120",
+    };
+    setQueue([...queue, newVideo]);
+    setNewVideoUrl("");
+  };
+
+  const handleVote = (id: any) => {
+    setQueue(
+      queue
+        .map((video) =>
+          video.id === id ? { ...video, votes: video.votes + 1 } : video
+        )
+        .sort((a, b) => b.votes - a.votes)
+    );
+  };
+
+  const playNext = () => {
+    if (queue.length > 0) {
+      setCurrentVideo(queue[0]);
+      setQueue(queue.slice(1));
+    }
+  };
+
+  const handleShare = () => {
+    // In a real app, you'd implement sharing functionality here
+    alert("Sharing functionality would be implemented here!");
+  };
+
+  const handleLogout = () => {
+    // In a real app, you'd implement logout functionality here
+    alert("Logout functionality would be implemented here!");
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-purple-50 to-pink-50">
+      <header className="bg-white border-b border-purple-100 shadow-sm">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+          <Link href="#" className="flex items-center space-x-2">
+            <Music className="h-6 w-6 text-purple-600" />
+            <span className="text-xl font-semibold text-purple-800">
+              UpYourTune
+            </span>
+          </Link>
+          <div className="flex items-center space-x-4">
+            <Button
+              onClick={handleShare}
+              variant="outline"
+              size="sm"
+              className="text-purple-600 border-purple-300 hover:bg-purple-50"
+            >
+              <Share2 className="mr-2 h-4 w-4" /> Share
+            </Button>
+            <Button
+              onClick={handleLogout}
+              variant="outline"
+              size="sm"
+              className="text-pink-600 border-pink-300 hover:bg-pink-50"
+            >
+              <LogOut className="mr-2 h-4 w-4" /> Logout
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto p-4 space-y-6">
+        {/* Video Player */}
+        <div className="aspect-video bg-gradient-to-br from-purple-900 to-pink-900 rounded-lg overflow-hidden shadow-md flex items-center justify-center">
+          {currentVideo ? (
+            <div className="text-white text-center">
+              <h2 className="text-xl font-semibold mb-2">Now Playing:</h2>
+              <p>{currentVideo.title}</p>
+            </div>
+          ) : (
+            <div className="text-white text-center">
+              <h2 className="text-xl font-semibold mb-2">
+                Welcome to UpYourTune!
+              </h2>
+              <p>Select a song from the queue to start playing.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Controls */}
+        <div className="flex justify-center">
+          <Button
+            onClick={playNext}
+            size="lg"
+            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 shadow-md"
+          >
+            <Play className="mr-2 h-5 w-5" /> Play Next
+          </Button>
+        </div>
+
+        {/* Add Video Form */}
+        <form onSubmit={handleAddVideo} className="flex gap-2">
+          <Input
+            type="text"
+            placeholder="Paste YouTube URL here"
+            value={newVideoUrl}
+            onChange={(e) => setNewVideoUrl(e.target.value)}
+            className="flex-grow shadow-sm"
+          />
+          <Button
+            type="submit"
+            className="bg-green-500 hover:bg-green-600 text-white shadow-sm"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add to Queue
+          </Button>
+        </form>
+
+        {/* Queue */}
+        <div className="bg-white rounded-lg shadow-md p-4 border border-purple-100">
+          <h2 className="text-lg font-semibold mb-4 text-purple-800">
+            Up Next
+          </h2>
+          <ul className="space-y-4">
+            {queue.map((video, index) => (
+              <li
+                key={video.id}
+                className={`flex items-center gap-4 p-2 rounded-md transition-colors ${
+                  index === 0
+                    ? "bg-purple-100"
+                    : "bg-purple-50 hover:bg-purple-100"
+                }`}
+              >
+                <img
+                  src={video.thumbnail}
+                  alt={video.title}
+                  className="w-20 h-12 object-cover rounded shadow-sm"
+                />
+                <div className="flex-grow">
+                  <h3 className="font-medium text-purple-900">{video.title}</h3>
+                  <p className="text-sm text-purple-600">{video.votes} votes</p>
+                </div>
+                <Button
+                  onClick={() => handleVote(video.id)}
+                  variant="outline"
+                  size="sm"
+                  className="text-purple-600 border-purple-300 hover:bg-purple-100 shadow-sm"
+                >
+                  <ThumbsUp className="mr-2 h-4 w-4" /> Vote
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </main>
+    </div>
+  );
+}
