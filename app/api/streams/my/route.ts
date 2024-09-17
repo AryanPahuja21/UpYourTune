@@ -31,6 +31,11 @@ export async function GET(req: NextRequest) {
           upvotes: true,
         },
       },
+      upvotes: {
+        where: {
+          userId: user.id,
+        },
+      },
     },
   });
 

@@ -38,6 +38,10 @@ export async function POST(req: NextRequest) {
         },
       },
     });
+
+    return NextResponse.json({
+      message: "Upvoted successfully",
+    });
   } catch (e) {
     return NextResponse.json(
       {

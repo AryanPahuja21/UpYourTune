@@ -9,6 +9,8 @@ const UpvoteSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  console.log("Upvote request");
+  console.log(req.json());
   const session = await getServerSession();
 
   const user = await prismaClient.user.findFirst({
@@ -36,7 +38,12 @@ export async function POST(req: NextRequest) {
         streamId: data.streamId,
       },
     });
+
+    return NextResponse.json({
+      message: "Upvoted successfully",
+    });
   } catch (e) {
+    console.log(e);
     return NextResponse.json(
       {
         message: "Error while upvoting",

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThumbsUp, Music, Play, LogOut, Share2, Plus } from "lucide-react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
+import axios from "axios";
 
 // Mock data for initial queue
 const initialQueue = [
@@ -29,10 +30,33 @@ const initialQueue = [
   },
 ];
 
+const REFRESH_INTERVAL_MS = 10 * 1000;
+
 export default function StreamingPage() {
   const [queue, setQueue] = useState(initialQueue);
   const [currentVideo, setCurrentVideo] = useState<any>(null);
   const [newVideoUrl, setNewVideoUrl] = useState("");
+
+  const refreshStreams = async () => {
+    const response = await axios.get("/api/streams/my");
+    const streams = response.data.streams;
+    setQueue(
+      streams
+        .map((stream: any) => ({
+          id: stream.id,
+          title: stream.title,
+          votes: stream.upvotes,
+          thumbnail: stream.thumbnail,
+        }))
+        .sort((a: any, b: any) => b.votes - a.votes)
+    );
+  };
+
+  useEffect(() => {
+    refreshStreams();
+    const interval = setInterval(refreshStreams, REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleAddVideo = (e: any) => {
     e.preventDefault();
@@ -55,6 +79,13 @@ export default function StreamingPage() {
         )
         .sort((a, b) => b.votes - a.votes)
     );
+
+    fetch("/api/streams/upvote", {
+      method: "POST",
+      body: JSON.stringify({
+        streamId: id,
+      }),
+    });
   };
 
   const playNext = () => {
