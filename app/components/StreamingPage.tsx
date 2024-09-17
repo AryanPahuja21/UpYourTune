@@ -3,37 +3,37 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ThumbsUp, Music, Play, LogOut, Share2, Plus } from "lucide-react";
+import {
+  ThumbsUp,
+  Music,
+  Play,
+  LogOut,
+  Share2,
+  Plus,
+  ThumbsDown,
+} from "lucide-react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import axios from "axios";
 
-// Mock data for initial queue
-const initialQueue = [
-  {
-    id: 1,
-    title: "Bohemian Rhapsody - Queen",
-    votes: 5,
-    thumbnail: "/placeholder.svg?height=90&width=120",
-  },
-  {
-    id: 2,
-    title: "Imagine - John Lennon",
-    votes: 3,
-    thumbnail: "/placeholder.svg?height=90&width=120",
-  },
-  {
-    id: 3,
-    title: "Billie Jean - Michael Jackson",
-    votes: 4,
-    thumbnail: "/placeholder.svg?height=90&width=120",
-  },
-];
+interface Video {
+  id: string;
+  type: string;
+  url: string;
+  extractedId: string;
+  title: string;
+  smallImg: string;
+  bigImg: string;
+  active: boolean;
+  userId: string;
+  upvotes: number;
+  haveUpvoted: boolean;
+}
 
 const REFRESH_INTERVAL_MS = 10 * 1000;
 
 export default function StreamingPage() {
-  const [queue, setQueue] = useState(initialQueue);
+  const [queue, setQueue] = useState<Video[]>([]);
   const [currentVideo, setCurrentVideo] = useState<any>(null);
   const [newVideoUrl, setNewVideoUrl] = useState("");
 
@@ -45,8 +45,10 @@ export default function StreamingPage() {
         .map((stream: any) => ({
           id: stream.id,
           title: stream.title,
-          votes: stream.upvotes,
-          thumbnail: stream.thumbnail,
+          smallImg: stream.smallImg,
+          bigImg: stream.bigImg,
+          upvotes: stream.upvotes,
+          haveUpvoted: stream.haveUpvoted,
         }))
         .sort((a: any, b: any) => b.votes - a.votes)
     );
@@ -67,20 +69,26 @@ export default function StreamingPage() {
       votes: 0,
       thumbnail: "/placeholder.svg?height=90&width=120",
     };
-    setQueue([...queue, newVideo]);
+    // setQueue([...queue, newVideo]);
     setNewVideoUrl("");
   };
 
-  const handleVote = (id: any) => {
+  const handleVote = (id: any, isUpvote: boolean) => {
     setQueue(
       queue
         .map((video) =>
-          video.id === id ? { ...video, votes: video.votes + 1 } : video
+          video.id === id
+            ? {
+                ...video,
+                upvotes: isUpvote ? video.upvotes + 1 : video.upvotes,
+                haveUpvoted: !video.haveUpvoted,
+              }
+            : video
         )
-        .sort((a, b) => b.votes - a.votes)
+        .sort((a, b) => b.upvotes - a.upvotes)
     );
 
-    axios.post("/api/streams/upvote", {
+    axios.post(`/api/streams/${isUpvote ? "upvote" : "downvote"}`, {
       streamId: id,
     });
   };
@@ -197,22 +205,31 @@ export default function StreamingPage() {
                 }`}
               >
                 <img
-                  src={video.thumbnail}
+                  src={video.smallImg}
                   alt={video.title}
                   className="w-20 h-12 object-cover rounded shadow-sm"
                 />
                 <div className="flex-grow">
                   <h3 className="font-medium text-purple-900">{video.title}</h3>
-                  <p className="text-sm text-purple-600">{video.votes} votes</p>
+                  <p className="text-sm text-purple-600">
+                    {video.upvotes} votes
+                  </p>
                 </div>
                 <Button
-                  onClick={() => handleVote(video.id)}
+                  onClick={() =>
+                    handleVote(video.id, video.haveUpvoted ? false : true)
+                  }
                   variant="outline"
                   size="sm"
-                  className="text-purple-600 border-purple-300 hover:bg-purple-100 shadow-sm"
+                  className={`text-purple-600  ${
+                    video.haveUpvoted && "bg-purple-500 text-white"
+                  } border-purple-300 hover:bg-purple-100 shadow-sm`}
                 >
-                  <ThumbsUp className="sm:mr-2 h-4 w-4" />{" "}
-                  <p className="hidden sm:block">Vote</p>
+                  {video.haveUpvoted ? (
+                    <ThumbsDown className="h-4 w-4" />
+                  ) : (
+                    <ThumbsUp className="h-4 w-4" />
+                  )}{" "}
                 </Button>
               </li>
             ))}

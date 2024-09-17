@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     streams: streams.map(({ _count, ...rest }) => ({
       ...rest,
       upvotes: _count.upvotes,
-      haveVoted: rest.upvotes.length ? true : false,
+      haveUpvoted: rest.upvotes.length ? true : false,
     })),
   });
 }
