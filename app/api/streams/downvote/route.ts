@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 const UpvoteSchema = z.object({
-  userId: z.string(),
   streamId: z.string(),
 });
 
@@ -33,7 +32,7 @@ export async function POST(req: NextRequest) {
     await prismaClient.upvote.delete({
       where: {
         userId_streamId: {
-          userId: data.userId,
+          userId: user.id,
           streamId: data.streamId,
         },
       },
