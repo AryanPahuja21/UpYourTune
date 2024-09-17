@@ -80,11 +80,8 @@ export default function StreamingPage() {
         .sort((a, b) => b.votes - a.votes)
     );
 
-    fetch("/api/streams/upvote", {
-      method: "POST",
-      body: JSON.stringify({
-        streamId: id,
-      }),
+    axios.post("/api/streams/upvote", {
+      streamId: id,
     });
   };
 
