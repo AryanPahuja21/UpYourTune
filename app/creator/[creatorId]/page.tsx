@@ -1,5 +1,6 @@
+"use client";
 import StreamingPage from "@/app/components/StreamingPage";
-import React from "react";
+import { signIn, useSession } from "next-auth/react";
 
 const UserView = ({
   params: { creatorId },
@@ -8,7 +9,16 @@ const UserView = ({
     creatorId: string;
   };
 }) => {
-  return <StreamingPage creatorId={creatorId} />;
+  const session = useSession();
+  return (
+    <>
+      {session?.data?.user ? (
+        <StreamingPage creatorId={creatorId} />
+      ) : (
+        <>{signIn()}</>
+      )}
+    </>
+  );
 };
 
 export default UserView;
