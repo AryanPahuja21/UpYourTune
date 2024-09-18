@@ -1,6 +1,7 @@
 "use client";
-import StreamingPage from "@/app/components/StreamingPage";
+import { useEffect } from "react";
 import { signIn, useSession } from "next-auth/react";
+import StreamingPage from "@/app/components/StreamingPage";
 
 const UserView = ({
   params: { creatorId },
@@ -9,13 +10,24 @@ const UserView = ({
     creatorId: string;
   };
 }) => {
-  const session = useSession();
+  const { data: session, status } = useSession();
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      signIn();
+    }
+  }, [status]);
+
+  if (status === "loading") {
+    return <p>Loading...</p>;
+  }
+
   return (
     <>
-      {session?.data?.user ? (
+      {session?.user ? (
         <StreamingPage creatorId={creatorId} />
       ) : (
-        <>{signIn()}</>
+        <p>Redirecting to sign-in...</p>
       )}
     </>
   );

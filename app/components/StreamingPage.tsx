@@ -50,7 +50,7 @@ export default function StreamingPage({ creatorId }: { creatorId: string }) {
           upvotes: stream.upvotes,
           haveUpvoted: stream.haveUpvoted,
         }))
-        .sort((a: any, b: any) => b.votes - a.votes)
+        .sort((a: any, b: any) => b.upvotes - a.upvotes)
     );
   };
 
