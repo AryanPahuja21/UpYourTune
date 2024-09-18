@@ -80,7 +80,7 @@ export default function StreamingPage() {
           video.id === id
             ? {
                 ...video,
-                upvotes: isUpvote ? video.upvotes + 1 : video.upvotes,
+                upvotes: isUpvote ? video.upvotes + 1 : video.upvotes - 1,
                 haveUpvoted: !video.haveUpvoted,
               }
             : video

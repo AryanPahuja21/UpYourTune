@@ -2,10 +2,10 @@
 
 import { useSession } from "next-auth/react";
 import LandingPage from "./components/LandingPage";
-import StreamingPage from "./components/StreamingPage";
+import { redirect } from "next/navigation";
 
 export default function Home() {
   const session = useSession();
 
-  return <>{session?.data?.user ? <StreamingPage /> : <LandingPage />}</>;
+  return <>{session?.data?.user ? redirect("/dashboard") : <LandingPage />}</>;
 }
