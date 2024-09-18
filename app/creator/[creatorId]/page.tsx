@@ -1,3 +1,4 @@
+import StreamingPage from "@/app/components/StreamingPage";
 import React from "react";
 
 const UserView = ({
@@ -7,7 +8,7 @@ const UserView = ({
     creatorId: string;
   };
 }) => {
-  return <div>{creatorId}</div>;
+  return <StreamingPage creatorId={creatorId} />;
 };
 
 export default UserView;

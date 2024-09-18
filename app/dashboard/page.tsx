@@ -1,9 +1,10 @@
 import StreamingPage from "../components/StreamingPage";
 
 const Dashboard = () => {
+  const creatorId = "1";
   return (
     <div>
-      <StreamingPage />
+      <StreamingPage creatorId={creatorId} />
     </div>
   );
 };

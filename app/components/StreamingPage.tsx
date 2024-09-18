@@ -32,13 +32,13 @@ interface Video {
 
 const REFRESH_INTERVAL_MS = 10 * 1000;
 
-export default function StreamingPage() {
+export default function StreamingPage({ creatorId }: { creatorId: string }) {
   const [queue, setQueue] = useState<Video[]>([]);
   const [currentVideo, setCurrentVideo] = useState<any>(null);
   const [newVideoUrl, setNewVideoUrl] = useState("");
 
   const refreshStreams = async () => {
-    const response = await axios.get("/api/streams/my");
+    const response = await axios.get(`/api/streams/?creatorId=${creatorId}`);
     const streams = response.data.streams;
     setQueue(
       streams
@@ -101,8 +101,9 @@ export default function StreamingPage() {
   };
 
   const handleShare = () => {
-    // In a real app, you'd implement sharing functionality here
-    alert("Sharing functionality would be implemented here!");
+    navigator.clipboard.writeText(
+      window.location.hostname + `/creator/${creatorId}`
+    );
   };
 
   const handleLogout = () => {
