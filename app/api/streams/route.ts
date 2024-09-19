@@ -13,8 +13,10 @@ const CreateStreamSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    // Parse and validate incoming data
     const data = CreateStreamSchema.parse(await req.json());
     const isYt = data.url.match(YT_REGEX);
+
     if (!isYt) {
       return NextResponse.json(
         {
@@ -28,12 +30,28 @@ export async function POST(req: NextRequest) {
 
     const extractedId = data.url.split("?v=")[1];
 
+    // Fetch video details from YouTube API
     const res = await youtubesearchapi.GetVideoDetails(extractedId);
+
+    // Check if the response contains the required properties
+    if (!res || !res.thumbnail || !res.thumbnail.thumbnails) {
+      return NextResponse.json(
+        {
+          message: "Thumbnails data is missing in the response",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    // Safely access and sort thumbnails
     const thumbnails = res.thumbnail.thumbnails;
     thumbnails.sort((a: { width: number }, b: { width: number }) =>
       a.width < b.width ? -1 : 1
     );
 
+    // Create a new stream entry in the database
     const stream = await prismaClient.stream.create({
       data: {
         userId: data.creatorId,
@@ -42,14 +60,14 @@ export async function POST(req: NextRequest) {
         type: "Youtube",
         title: res.title ?? "Can't fetch title",
         smallImg:
-          (res?.thumbnail?.thumbnails?.length > 1
-            ? res.thumbnail.thumbnails[res.thumbnail.thumbnails.length - 2].url
-            : res?.thumbnail?.thumbnails?.[0]?.url) ??
-          "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D",
+          thumbnails.length > 1
+            ? thumbnails[thumbnails.length - 2].url
+            : thumbnails[0]?.url ??
+              "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D",
         bigImg:
-          res?.thumbnail?.thumbnails?.[res.thumbnail.thumbnails.length - 1]
-            ?.url ??
-          "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D",
+          thumbnails.length > 0
+            ? thumbnails[thumbnails.length - 1].url
+            : "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D",
       },
     });
 
@@ -58,13 +76,14 @@ export async function POST(req: NextRequest) {
       id: stream.id,
     });
   } catch (e: any) {
+    // Return detailed error message
     return NextResponse.json(
       {
         message: "Error while adding a stream",
         error: e.message,
       },
       {
-        status: 403,
+        status: 500, // Changed status code to 500 for server errors
       }
     );
   }
