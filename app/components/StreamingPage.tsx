@@ -49,7 +49,7 @@ export default function StreamingPage({
 
   const refreshStreams = async () => {
     const response = await axios.get(`/api/streams/?creatorId=${creatorId}`);
-    const streams = response.data.streams;
+    const { streams, activeStream } = response.data;
     setQueue(
       streams
         .map((stream: any) => ({
@@ -62,7 +62,13 @@ export default function StreamingPage({
         }))
         .sort((a: any, b: any) => b.upvotes - a.upvotes)
     );
-    setCurrentVideo(response.data.activeStream.stream);
+    setCurrentVideo((video: any) => {
+      if (video?.id === activeStream?.stream?.id) {
+        return video;
+      }
+
+      return activeStream?.stream;
+    });
   };
 
   useEffect(() => {
@@ -77,6 +83,16 @@ export default function StreamingPage({
 
     player.loadVideoById(currentVideo?.extractedId);
     player.playVideo();
+    function eventHandler(event: any) {
+      if (event.data === 0) {
+        playNext();
+      }
+    }
+    player.on("stateChange", eventHandler);
+
+    return () => {
+      player.destroy();
+    };
   }, [currentVideo, videoPlayerRef]);
 
   const handleVote = (id: any, isUpvote: boolean) => {
