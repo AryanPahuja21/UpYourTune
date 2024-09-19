@@ -57,10 +57,11 @@ export async function POST(req: NextRequest) {
       message: "Stream added successfully",
       id: stream.id,
     });
-  } catch (e) {
+  } catch (e: any) {
     return NextResponse.json(
       {
         message: "Error while adding a stream",
+        error: e.message,
       },
       {
         status: 403,
