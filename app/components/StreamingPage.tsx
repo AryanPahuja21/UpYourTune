@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,6 +15,8 @@ import {
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import axios from "axios";
+//@ts-expect-error
+import YoutubePlayer from "youtube-player";
 
 interface Video {
   id: string;
@@ -43,6 +45,8 @@ export default function StreamingPage({
   const [currentVideo, setCurrentVideo] = useState<any>(null);
   const [newVideoUrl, setNewVideoUrl] = useState("");
 
+  const videoPlayerRef = useRef<HTMLDivElement>(null);
+
   const refreshStreams = async () => {
     const response = await axios.get(`/api/streams/?creatorId=${creatorId}`);
     const streams = response.data.streams;
@@ -66,6 +70,14 @@ export default function StreamingPage({
     const interval = setInterval(refreshStreams, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!videoPlayerRef.current) return;
+    let player = YoutubePlayer(videoPlayerRef.current);
+
+    player.loadVideoById(currentVideo?.extractedId);
+    player.playVideo();
+  }, [currentVideo, videoPlayerRef]);
 
   const handleVote = (id: any, isUpvote: boolean) => {
     setQueue(
@@ -146,12 +158,13 @@ export default function StreamingPage({
               <div className="w-full h-full text-white text-center">
                 <div className="w-full h-full">
                   {playVideo ? (
-                    <iframe
-                      src={`https://www.youtube.com/embed/${currentVideo.extractedId}?autplay=1`}
-                      allow="autoplay"
-                      className="w-full h-full"
-                    />
+                    <div ref={videoPlayerRef} className="w-full h-full" />
                   ) : (
+                    // <iframe
+                    //   src={`https://www.youtube.com/embed/${currentVideo.extractedId}?autplay=1`}
+                    //   allow="autoplay"
+                    //   className="w-full h-full"
+                    // />
                     // <img
                     //   src={currentVideo.bigImg}
                     //   alt={currentVideo.title}
