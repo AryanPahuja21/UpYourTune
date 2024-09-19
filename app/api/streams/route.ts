@@ -29,29 +29,26 @@ export async function POST(req: NextRequest) {
     }
 
     const extractedId = data.url.split("?v=")[1];
-
-    // Fetch video details from YouTube API
+    console.log("Extracted Video ID:", extractedId);
     const res = await youtubesearchapi.GetVideoDetails(extractedId);
+    console.log("API Response:", res);
 
-    // Check if the response contains the required properties
-    if (!res || !res.thumbnail || !res.thumbnail.thumbnails) {
-      return NextResponse.json(
-        {
-          message: "Thumbnails data is missing in the response",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    // Safely access and sort thumbnails
-    const thumbnails = res.thumbnail.thumbnails;
+    const thumbnails = res?.thumbnail?.thumbnails ?? [];
     thumbnails.sort((a: { width: number }, b: { width: number }) =>
       a.width < b.width ? -1 : 1
     );
 
-    // Create a new stream entry in the database
+    const smallImg =
+      thumbnails.length > 1
+        ? thumbnails[thumbnails.length - 2].url
+        : thumbnails[0]?.url ??
+          "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D";
+
+    const bigImg =
+      thumbnails.length > 0
+        ? thumbnails[thumbnails.length - 1].url
+        : "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D";
+
     const stream = await prismaClient.stream.create({
       data: {
         userId: data.creatorId,
@@ -59,15 +56,8 @@ export async function POST(req: NextRequest) {
         extractedId,
         type: "Youtube",
         title: res.title ?? "Can't fetch title",
-        smallImg:
-          thumbnails.length > 1
-            ? thumbnails[thumbnails.length - 2].url
-            : thumbnails[0]?.url ??
-              "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D",
-        bigImg:
-          thumbnails.length > 0
-            ? thumbnails[thumbnails.length - 1].url
-            : "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D",
+        smallImg,
+        bigImg,
       },
     });
 
@@ -76,14 +66,14 @@ export async function POST(req: NextRequest) {
       id: stream.id,
     });
   } catch (e: any) {
-    // Return detailed error message
+    console.error("Error while adding a stream:", e);
     return NextResponse.json(
       {
         message: "Error while adding a stream",
         error: e.message,
       },
       {
-        status: 500, // Changed status code to 500 for server errors
+        status: 500,
       }
     );
   }
