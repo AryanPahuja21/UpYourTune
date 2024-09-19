@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
       id: stream.id,
     });
   } catch (e) {
+    console.log(e);
     return NextResponse.json(
       {
         message: "Error while adding a stream",
