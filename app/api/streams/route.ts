@@ -4,9 +4,8 @@ import { z } from "zod";
 //@ts-expect-error
 import youtubesearchapi from "youtube-search-api";
 import { getServerSession } from "next-auth";
+import { YT_REGEX } from "@/app/lib/utils";
 
-const YT_REGEX =
-  /^(?:(?:https?:)?\/\/)?(?:www\.)?(?:m\.)?(?:youtu(?:be)?\.com\/(?:v\/|embed\/|watch(?:\/|\?v=))|youtu\.be\/)((?:\w|-){11})(?:\S+)?$/;
 const CreateStreamSchema = z.object({
   creatorId: z.string(),
   url: z.string(),

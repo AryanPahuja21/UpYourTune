@@ -14,7 +14,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
+import LiteYoutubeEmbed from "react-lite-youtube-embed";
 import axios from "axios";
+import { YT_REGEX } from "../lib/utils";
 
 interface Video {
   id: string;
@@ -59,19 +61,6 @@ export default function StreamingPage({ creatorId }: { creatorId: string }) {
     const interval = setInterval(refreshStreams, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
-
-  const handleAddVideo = (e: any) => {
-    e.preventDefault();
-    // In a real app, you'd parse the YouTube URL and fetch video details
-    const newVideo = {
-      id: queue.length + 1,
-      title: `New Video ${queue.length + 1}`,
-      votes: 0,
-      thumbnail: "/placeholder.svg?height=90&width=120",
-    };
-    // setQueue([...queue, newVideo]);
-    setNewVideoUrl("");
-  };
 
   const handleVote = (id: any, isUpvote: boolean) => {
     setQueue(
@@ -148,6 +137,12 @@ export default function StreamingPage({ creatorId }: { creatorId: string }) {
         <div className="aspect-video bg-gradient-to-br from-purple-900 to-pink-900 rounded-lg overflow-hidden shadow-md flex items-center justify-center">
           {currentVideo ? (
             <div className="text-white text-center">
+              <div className="inset-0">
+                <LiteYoutubeEmbed
+                  id={currentVideo.id}
+                  title={currentVideo.title}
+                />
+              </div>
               <h2 className="text-xl font-semibold mb-2">Now Playing:</h2>
               <p>{currentVideo.title}</p>
             </div>
@@ -173,7 +168,7 @@ export default function StreamingPage({ creatorId }: { creatorId: string }) {
         </div>
 
         {/* Add Video Form */}
-        <form onSubmit={handleAddVideo} className="flex gap-2">
+        <form className="flex gap-2">
           <Input
             type="text"
             placeholder="Paste YouTube URL here"
@@ -182,7 +177,13 @@ export default function StreamingPage({ creatorId }: { creatorId: string }) {
             className="flex-grow shadow-sm"
           />
           <Button
-            type="submit"
+            onClick={() => {
+              axios.post(`/api/streams`, {
+                creatorId: creatorId,
+                url: newVideoUrl,
+              });
+              setNewVideoUrl("");
+            }}
             className="bg-green-500 hover:bg-green-600 text-white shadow-sm"
           >
             <Plus className="sm:mr-2 h-4 w-4" />{" "}
