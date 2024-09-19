@@ -89,7 +89,8 @@ export default function StreamingPage({
 
   const playNext = async () => {
     if (queue.length > 0) {
-      setCurrentVideo(queue[0]);
+      const response = await axios.get(`/api/streams/next`);
+      setCurrentVideo(response.data.currentStream);
       setQueue(queue.slice(1));
     }
   };
@@ -166,7 +167,7 @@ export default function StreamingPage({
               <h2 className="text-xl font-semibold mb-2">
                 Welcome to UpYourTune!
               </h2>
-              <p>Select a song from the queue to start playing.</p>
+              <p>Add a song to queue to start playing</p>
             </div>
           )}
         </div>
@@ -185,7 +186,7 @@ export default function StreamingPage({
         )}
 
         {/* Add Video Form */}
-        <form className="flex gap-2">
+        <div className="flex gap-2">
           <Input
             type="text"
             placeholder="Paste YouTube URL here"
@@ -206,7 +207,7 @@ export default function StreamingPage({
             <Plus className="sm:mr-2 h-4 w-4" />{" "}
             <p className="hidden sm:block"> Add to Queue</p>
           </Button>
-        </form>
+        </div>
 
         {/* Queue */}
         <div className="bg-white rounded-lg shadow-md p-4 border border-purple-100">
