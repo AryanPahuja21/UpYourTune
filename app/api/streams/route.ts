@@ -42,12 +42,13 @@ export async function POST(req: NextRequest) {
         type: "Youtube",
         title: res.title ?? "Can't fetch title",
         smallImg:
-          thumbnails.length > 1
-            ? thumbnails[thumbnails.length - 2].url
-            : thumbnails[thumbnails.length - 1].url ??
-              "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D",
+          (res?.thumbnail?.thumbnails?.length > 1
+            ? res.thumbnail.thumbnails[res.thumbnail.thumbnails.length - 2].url
+            : res?.thumbnail?.thumbnails?.[0]?.url) ??
+          "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D",
         bigImg:
-          thumbnails[thumbnails.length - 1].url ??
+          res?.thumbnail?.thumbnails?.[res.thumbnail.thumbnails.length - 1]
+            ?.url ??
           "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D",
       },
     });
@@ -57,7 +58,6 @@ export async function POST(req: NextRequest) {
       id: stream.id,
     });
   } catch (e) {
-    console.log(e);
     return NextResponse.json(
       {
         message: "Error while adding a stream",
