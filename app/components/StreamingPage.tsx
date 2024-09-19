@@ -34,7 +34,13 @@ interface Video {
 
 const REFRESH_INTERVAL_MS = 10 * 1000;
 
-export default function StreamingPage({ creatorId }: { creatorId: string }) {
+export default function StreamingPage({
+  creatorId,
+  playVideo = false,
+}: {
+  creatorId: string;
+  playVideo: boolean;
+}) {
   const [queue, setQueue] = useState<Video[]>([]);
   const [currentVideo, setCurrentVideo] = useState<any>(null);
   const [newVideoUrl, setNewVideoUrl] = useState("");
@@ -54,6 +60,7 @@ export default function StreamingPage({ creatorId }: { creatorId: string }) {
         }))
         .sort((a: any, b: any) => b.upvotes - a.upvotes)
     );
+    setCurrentVideo(response.data.activeStream);
   };
 
   useEffect(() => {
@@ -82,7 +89,7 @@ export default function StreamingPage({ creatorId }: { creatorId: string }) {
     });
   };
 
-  const playNext = () => {
+  const playNext = async () => {
     if (queue.length > 0) {
       setCurrentVideo(queue[0]);
       setQueue(queue.slice(1));
@@ -157,15 +164,17 @@ export default function StreamingPage({ creatorId }: { creatorId: string }) {
         </div>
 
         {/* Controls */}
-        <div className="flex justify-center">
-          <Button
-            onClick={playNext}
-            size="lg"
-            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 shadow-md"
-          >
-            <Play className="mr-2 h-5 w-5" /> Play Next
-          </Button>
-        </div>
+        {playVideo && (
+          <div className="flex justify-center">
+            <Button
+              onClick={playNext}
+              size="lg"
+              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 shadow-md"
+            >
+              <Play className="mr-2 h-5 w-5" /> Play Next
+            </Button>
+          </div>
+        )}
 
         {/* Add Video Form */}
         <form className="flex gap-2">

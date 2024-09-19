@@ -25,7 +25,7 @@ const UserView = ({
   return (
     <>
       {session?.user ? (
-        <StreamingPage creatorId={creatorId} />
+        <StreamingPage creatorId={creatorId} playVideo={false} />
       ) : (
         <p>Redirecting to sign-in...</p>
       )}
