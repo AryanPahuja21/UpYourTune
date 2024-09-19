@@ -14,9 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import LiteYoutubeEmbed from "react-lite-youtube-embed";
 import axios from "axios";
-import { YT_REGEX } from "../lib/utils";
 
 interface Video {
   id: string;
@@ -60,7 +58,7 @@ export default function StreamingPage({
         }))
         .sort((a: any, b: any) => b.upvotes - a.upvotes)
     );
-    setCurrentVideo(response.data.activeStream);
+    setCurrentVideo(response.data.activeStream.stream);
   };
 
   useEffect(() => {
@@ -143,15 +141,25 @@ export default function StreamingPage({
         {/* Video Player */}
         <div className="aspect-video bg-gradient-to-br from-purple-900 to-pink-900 rounded-lg overflow-hidden shadow-md flex items-center justify-center">
           {currentVideo ? (
-            <div className="text-white text-center">
-              <div className="inset-0">
-                <LiteYoutubeEmbed
-                  id={currentVideo.id}
-                  title={currentVideo.title}
-                />
+            <div className="w-full h-full flex flex-col justify-between">
+              <div className="w-full h-full text-white text-center">
+                <div className="w-full h-full">
+                  {playVideo ? (
+                    <iframe
+                      src={`https://www.youtube.com/embed/${currentVideo.extractedId}?autplay=1`}
+                      allow="autoplay"
+                      className="w-full h-full"
+                    />
+                  ) : (
+                    // <img
+                    //   src={currentVideo.bigImg}
+                    //   alt={currentVideo.title}
+                    //   className="w-full h-full object-cover"
+                    // />
+                    <div>{currentVideo}</div>
+                  )}
+                </div>
               </div>
-              <h2 className="text-xl font-semibold mb-2">Now Playing:</h2>
-              <p>{currentVideo.title}</p>
             </div>
           ) : (
             <div className="text-white text-center">
