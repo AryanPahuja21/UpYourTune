@@ -36,7 +36,7 @@ const REFRESH_INTERVAL_MS = 10 * 1000;
 
 export default function StreamingPage({
   creatorId,
-  playVideo = false,
+  playVideo,
 }: {
   creatorId: string;
   playVideo: boolean;
@@ -186,7 +186,14 @@ export default function StreamingPage({
                     //   alt={currentVideo.title}
                     //   className="w-full h-full object-cover"
                     // />
-                    <div>{currentVideo}</div>
+                    <>
+                      <p>Now Playing</p>
+                      <img
+                        src={currentVideo.bigImg}
+                        alt={currentVideo.title}
+                        className="w-full h-full object-cover"
+                      />
+                    </>
                   )}
                 </div>
               </div>
