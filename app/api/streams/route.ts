@@ -11,6 +11,19 @@ const CreateStreamSchema = z.object({
   url: z.string(),
 });
 
+// Helper function to fetch YouTube details with timeout
+async function fetchYoutubeDetailsWithTimeout(
+  extractedId: string,
+  timeoutMs: number = 3000
+) {
+  return Promise.race([
+    youtubesearchapi.GetVideoDetails(extractedId),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("YouTube API timeout")), timeoutMs)
+    ),
+  ]);
+}
+
 export async function POST(req: NextRequest) {
   try {
     // Parse and validate incoming data
@@ -30,24 +43,39 @@ export async function POST(req: NextRequest) {
 
     const extractedId = data.url.split("?v=")[1];
     console.log("Extracted Video ID:", extractedId);
-    const res = await youtubesearchapi.GetVideoDetails(extractedId);
-    console.log("API Response:", res);
 
-    const thumbnails = res?.thumbnail?.thumbnails ?? [];
-    thumbnails.sort((a: { width: number }, b: { width: number }) =>
-      a.width < b.width ? -1 : 1
-    );
+    // Default values in case API fails or times out
+    const defaultSmallImg = `https://img.youtube.com/vi/${extractedId}/default.jpg`;
+    const defaultBigImg = `https://img.youtube.com/vi/${extractedId}/maxresdefault.jpg`;
+    let title = "YouTube Video";
+    let smallImg = defaultSmallImg;
+    let bigImg = defaultBigImg;
 
-    const smallImg =
-      thumbnails.length > 1
-        ? thumbnails[thumbnails.length - 2].url
-        : thumbnails[0]?.url ??
-          "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D";
+    // Try to fetch YouTube details with timeout
+    try {
+      const res = await fetchYoutubeDetailsWithTimeout(extractedId, 3000);
+      console.log("API Response:", res);
 
-    const bigImg =
-      thumbnails.length > 0
-        ? thumbnails[thumbnails.length - 1].url
-        : "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bXVzaWN8ZW58MHx8MHx8fDA%3D";
+      const thumbnails = res?.thumbnail?.thumbnails ?? [];
+      thumbnails.sort((a: { width: number }, b: { width: number }) =>
+        a.width < b.width ? -1 : 1
+      );
+
+      smallImg =
+        thumbnails.length > 1
+          ? thumbnails[thumbnails.length - 2].url
+          : thumbnails[0]?.url ?? defaultSmallImg;
+
+      bigImg =
+        thumbnails.length > 0
+          ? thumbnails[thumbnails.length - 1].url
+          : defaultBigImg;
+
+      title = res.title ?? "YouTube Video";
+    } catch (apiError) {
+      console.warn("YouTube API failed, using default values:", apiError);
+      // Continue with default values
+    }
 
     const stream = await prismaClient.stream.create({
       data: {
@@ -55,7 +83,7 @@ export async function POST(req: NextRequest) {
         url: data.url,
         extractedId,
         type: "Youtube",
-        title: res.title ?? "Can't fetch title",
+        title,
         smallImg,
         bigImg,
       },
@@ -64,6 +92,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       message: "Stream added successfully",
       id: stream.id,
+      stream: {
+        id: stream.id,
+        title: stream.title,
+        smallImg: stream.smallImg,
+        bigImg: stream.bigImg,
+        upvotes: 0,
+        haveUpvoted: false,
+      },
     });
   } catch (e: any) {
     console.error("Error while adding a stream:", e);

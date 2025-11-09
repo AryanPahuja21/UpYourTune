@@ -33,22 +33,33 @@ export async function GET() {
     },
   });
 
-  await Promise.all([
+  if (!mostUpvotedStream) {
+    return NextResponse.json({
+      stream: null,
+      message: "No streams in queue",
+    });
+  }
+
+  // Update both current stream and mark as played in parallel
+  const [currentStream] = await Promise.all([
     prismaClient.currentStream.upsert({
       where: {
         userId: user.id,
       },
       update: {
-        streamId: mostUpvotedStream?.id,
+        streamId: mostUpvotedStream.id,
       },
       create: {
         userId: user.id,
-        streamId: mostUpvotedStream?.id,
+        streamId: mostUpvotedStream.id,
+      },
+      include: {
+        stream: true,
       },
     }),
     prismaClient.stream.update({
       where: {
-        id: mostUpvotedStream?.id ?? "",
+        id: mostUpvotedStream.id,
       },
       data: {
         played: true,
@@ -59,5 +70,6 @@ export async function GET() {
 
   return NextResponse.json({
     stream: mostUpvotedStream,
+    currentStream: currentStream,
   });
 }
