@@ -13,12 +13,16 @@ import {
   ThumbsDown,
   Loader2,
   AlertCircle,
+  Crown,
+  Users,
+  Info,
 } from "lucide-react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import axios from "axios";
 //@ts-expect-error
 import YoutubePlayer from "youtube-player";
+import SubscriptionBanner from "./SubscriptionBanner";
 
 interface Video {
   id: string;
@@ -51,6 +55,10 @@ export default function StreamingPage({
   const [addVideoError, setAddVideoError] = useState<string | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
 
+  // Subscription state
+  const [subscriptionData, setSubscriptionData] = useState<any>(null);
+  const [loadingSubscription, setLoadingSubscription] = useState(true);
+
   const videoPlayerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
 
@@ -82,9 +90,24 @@ export default function StreamingPage({
     }
   };
 
+  const fetchSubscriptionData = async () => {
+    try {
+      const response = await axios.get("/api/subscription");
+      setSubscriptionData(response.data);
+    } catch (error) {
+      console.error("Failed to fetch subscription data:", error);
+    } finally {
+      setLoadingSubscription(false);
+    }
+  };
+
   useEffect(() => {
     refreshStreams();
-    const interval = setInterval(refreshStreams, REFRESH_INTERVAL_MS);
+    fetchSubscriptionData();
+    const interval = setInterval(() => {
+      refreshStreams();
+      fetchSubscriptionData();
+    }, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
 
@@ -225,12 +248,23 @@ export default function StreamingPage({
       setNewVideoUrl("");
       
       // Refresh to get accurate data
-      setTimeout(refreshStreams, 500);
+      setTimeout(() => {
+        refreshStreams();
+        fetchSubscriptionData();
+      }, 500);
     } catch (error: any) {
       console.error("Failed to add video:", error);
-      setAddVideoError(
-        error.response?.data?.message || "Failed to add video. Please check the URL."
-      );
+      
+      // Check if it's a subscription limit error
+      if (error.response?.data?.limitReached) {
+        setAddVideoError(
+          error.response.data.message + " " + (error.response.data.upgradeMessage || "")
+        );
+      } else {
+        setAddVideoError(
+          error.response?.data?.message || "Failed to add video. Please check the URL."
+        );
+      }
     } finally {
       setIsAddingVideo(false);
     }
@@ -257,6 +291,37 @@ export default function StreamingPage({
             </span>
           </Link>
           <div className="flex items-center space-x-4">
+            {/* Subscription Badge */}
+            {subscriptionData && (
+              <div className="hidden sm:flex items-center space-x-2">
+                {subscriptionData.subscription.plan === "PREMIUM" ? (
+                  <div className="flex items-center space-x-1 bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 rounded-full border border-purple-300">
+                    <Crown className="h-4 w-4 text-purple-600" />
+                    <span className="text-xs font-semibold text-purple-700">
+                      PREMIUM
+                    </span>
+                  </div>
+                ) : subscriptionData.subscription.plan === "BASIC" ? (
+                  <div className="flex items-center space-x-1 bg-blue-100 px-3 py-1 rounded-full border border-blue-300">
+                    <Users className="h-4 w-4 text-blue-600" />
+                    <span className="text-xs font-semibold text-blue-700">
+                      BASIC
+                    </span>
+                  </div>
+                ) : (
+                  <Link href="/subscription">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-purple-600 border-purple-300 hover:bg-purple-50"
+                    >
+                      <Crown className="mr-1 h-4 w-4" />
+                      Upgrade
+                    </Button>
+                  </Link>
+                )}
+              </div>
+            )}
             <Button
               onClick={handleShare}
               variant="outline"
@@ -280,6 +345,72 @@ export default function StreamingPage({
       </header>
 
       <main className="max-w-4xl mx-auto p-4 space-y-6">
+        {/* Subscription Banner */}
+        {subscriptionData && !loadingSubscription && (
+          <SubscriptionBanner
+            currentUsage={subscriptionData.usage.currentSongs}
+            limit={subscriptionData.limits.maxSongs}
+            plan={subscriptionData.subscription.plan}
+            type="songs"
+          />
+        )}
+
+        {/* Subscription Info Card */}
+        {subscriptionData && !loadingSubscription && (
+          <div className="bg-white rounded-lg shadow-md p-4 border border-purple-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <Music className="h-5 w-5 text-purple-600" />
+                  <div>
+                    <p className="text-xs text-gray-600">Queue Usage</p>
+                    <p className="font-semibold text-gray-900">
+                      {subscriptionData.usage.currentSongs} /{" "}
+                      {subscriptionData.limits.maxSongs === -1
+                        ? "∞"
+                        : subscriptionData.limits.maxSongs}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="h-8 w-px bg-gray-300" />
+
+                <div className="flex items-center space-x-2">
+                  <Users className="h-5 w-5 text-blue-600" />
+                  <div>
+                    <p className="text-xs text-gray-600">Room Capacity</p>
+                    <p className="font-semibold text-gray-900">
+                      {subscriptionData.usage.currentMembers} /{" "}
+                      {subscriptionData.limits.maxMembers === -1
+                        ? "∞"
+                        : subscriptionData.limits.maxMembers}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <Link href="/subscription">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-purple-600 border-purple-300 hover:bg-purple-50 group relative"
+                >
+                  <Info className="mr-2 h-4 w-4" />
+                  View Plans
+                  {/* Tooltip */}
+                  <span className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
+                    {subscriptionData.subscription.plan === "FREE"
+                      ? "Upgrade to BASIC or PREMIUM for more capacity!"
+                      : subscriptionData.subscription.plan === "BASIC"
+                      ? "Upgrade to PREMIUM for unlimited capacity!"
+                      : "You're on the best plan!"}
+                  </span>
+                </Button>
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* Video Player */}
         <div className="aspect-video bg-gradient-to-br from-purple-900 to-pink-900 rounded-lg overflow-hidden shadow-md flex items-center justify-center">
           {currentVideo ? (
@@ -367,12 +498,25 @@ export default function StreamingPage({
                 }
               }}
               className="flex-grow shadow-sm"
-              disabled={isAddingVideo}
+              disabled={
+                isAddingVideo ||
+                (subscriptionData &&
+                  subscriptionData.limits.maxSongs !== -1 &&
+                  subscriptionData.usage.currentSongs >=
+                    subscriptionData.limits.maxSongs)
+              }
             />
             <Button
               onClick={handleAddVideo}
-              disabled={!newVideoUrl.trim() || isAddingVideo}
-              className="bg-green-500 hover:bg-green-600 text-white shadow-sm disabled:opacity-50"
+              disabled={
+                !newVideoUrl.trim() ||
+                isAddingVideo ||
+                (subscriptionData &&
+                  subscriptionData.limits.maxSongs !== -1 &&
+                  subscriptionData.usage.currentSongs >=
+                    subscriptionData.limits.maxSongs)
+              }
+              className="bg-green-500 hover:bg-green-600 text-white shadow-sm disabled:opacity-50 relative group"
             >
               {isAddingVideo ? (
                 <>
@@ -385,12 +529,34 @@ export default function StreamingPage({
                   <p className="hidden sm:block">Add to Queue</p>
                 </>
               )}
+              {/* Tooltip for disabled state */}
+              {subscriptionData &&
+                subscriptionData.limits.maxSongs !== -1 &&
+                subscriptionData.usage.currentSongs >=
+                  subscriptionData.limits.maxSongs && (
+                  <span className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
+                    Queue limit reached! Upgrade to add more.
+                  </span>
+                )}
             </Button>
           </div>
           {addVideoError && (
-            <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-2 rounded">
-              <AlertCircle className="h-4 w-4" />
-              <span>{addVideoError}</span>
+            <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 p-3 rounded border border-red-200">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <div className="flex-grow">
+                <span>{addVideoError}</span>
+                {addVideoError.includes("Upgrade") && (
+                  <Link href="/subscription">
+                    <Button
+                      size="sm"
+                      className="mt-2 bg-purple-600 hover:bg-purple-700 text-white text-xs"
+                    >
+                      <Crown className="mr-1 h-3 w-3" />
+                      View Plans
+                    </Button>
+                  </Link>
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -5,6 +5,7 @@ import { z } from "zod";
 import youtubesearchapi from "youtube-search-api";
 import { getServerSession } from "next-auth";
 import { YT_REGEX } from "@/app/lib/utils";
+import { checkCanAddStream } from "@/app/lib/subscription";
 
 const CreateStreamSchema = z.object({
   creatorId: z.string(),
@@ -26,6 +27,27 @@ async function fetchYoutubeDetailsWithTimeout(
 
 export async function POST(req: NextRequest) {
   try {
+    // Get session first
+    const session = await getServerSession();
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { message: "Unauthenticated" },
+        { status: 401 }
+      );
+    }
+
+    // Get user from database
+    const user = await prismaClient.user.findUnique({
+      where: { email: session.user.email },
+    });
+
+    if (!user) {
+      return NextResponse.json(
+        { message: "User not found" },
+        { status: 404 }
+      );
+    }
+
     // Parse and validate incoming data
     const data = CreateStreamSchema.parse(await req.json());
     const isYt = data.url.match(YT_REGEX);
@@ -40,6 +62,32 @@ export async function POST(req: NextRequest) {
         }
       );
     }
+
+    // CHECK SUBSCRIPTION LIMITS BEFORE ADDING STREAM
+    console.log(`[Streams API] Checking subscription limits for creator: ${data.creatorId}`);
+    const limitCheck = await checkCanAddStream(user.id, data.creatorId);
+
+    if (!limitCheck.canAdd) {
+      console.log(`[Streams API] Limit check failed: ${limitCheck.reason}`);
+      return NextResponse.json(
+        {
+          message: limitCheck.reason,
+          limitReached: true,
+          currentCount: limitCheck.currentCount,
+          limit: limitCheck.limit,
+          plan: limitCheck.plan,
+          upgradeMessage:
+            limitCheck.plan === "FREE"
+              ? "Upgrade to BASIC ($9.99/month) for 20 songs or PREMIUM ($19.99/month) for unlimited songs!"
+              : limitCheck.plan === "BASIC"
+              ? "Upgrade to PREMIUM ($19.99/month) for unlimited songs!"
+              : "You've reached your queue limit.",
+        },
+        { status: 403 }
+      );
+    }
+
+    console.log(`[Streams API] Limit check passed. Current: ${limitCheck.currentCount}/${limitCheck.limit}`);
 
     const extractedId = data.url.split("?v=")[1];
     console.log("Extracted Video ID:", extractedId);
