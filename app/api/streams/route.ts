@@ -4,7 +4,8 @@ import { z } from "zod";
 //@ts-expect-error
 import youtubesearchapi from "youtube-search-api";
 import { getServerSession } from "next-auth";
-import { YT_REGEX } from "@/app/lib/utils";
+import { YT_REGEX } from "@/lib/utils";
+import redis from "@/app/lib/redis";
 
 const CreateStreamSchema = z.object({
   creatorId: z.string(),
@@ -26,32 +27,22 @@ async function fetchYoutubeDetailsWithTimeout(
 
 export async function POST(req: NextRequest) {
   try {
-    // Parse and validate incoming data
     const data = CreateStreamSchema.parse(await req.json());
     const isYt = data.url.match(YT_REGEX);
 
     if (!isYt) {
-      return NextResponse.json(
-        {
-          message: "Invalid URL",
-        },
-        {
-          status: 403,
-        }
-      );
+      return NextResponse.json({ message: "Invalid URL" }, { status: 403 });
     }
 
     const extractedId = data.url.split("?v=")[1];
     console.log("Extracted Video ID:", extractedId);
 
-    // Default values in case API fails or times out
     const defaultSmallImg = `https://img.youtube.com/vi/${extractedId}/default.jpg`;
     const defaultBigImg = `https://img.youtube.com/vi/${extractedId}/maxresdefault.jpg`;
     let title = "YouTube Video";
     let smallImg = defaultSmallImg;
     let bigImg = defaultBigImg;
 
-    // Try to fetch YouTube details with timeout
     try {
       const res = await fetchYoutubeDetailsWithTimeout(extractedId, 3000);
       console.log("API Response:", res);
@@ -74,7 +65,6 @@ export async function POST(req: NextRequest) {
       title = res.title ?? "YouTube Video";
     } catch (apiError) {
       console.warn("YouTube API failed, using default values:", apiError);
-      // Continue with default values
     }
 
     const stream = await prismaClient.stream.create({
@@ -88,6 +78,9 @@ export async function POST(req: NextRequest) {
         bigImg,
       },
     });
+
+    // Clear cache after adding a stream
+    await redis.del(`creator:${data.creatorId}:streams`);
 
     return NextResponse.json({
       message: "Stream added successfully",
@@ -104,13 +97,8 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("Error while adding a stream:", e);
     return NextResponse.json(
-      {
-        message: "Error while adding a stream",
-        error: e.message,
-      },
-      {
-        status: 500,
-      }
+      { message: "Error while adding a stream", error: e.message },
+      { status: 500 }
     );
   }
 }
@@ -119,66 +107,51 @@ export async function GET(req: NextRequest) {
   const creatorId = req.nextUrl.searchParams.get("creatorId");
   const session = await getServerSession();
   const user = await prismaClient.user.findFirst({
-    where: {
-      email: session?.user?.email ?? "",
-    },
+    where: { email: session?.user?.email ?? "" },
   });
 
   if (!user) {
-    return NextResponse.json(
-      {
-        message: "Unauthenticated",
-      },
-      {
-        status: 403,
-      }
-    );
+    return NextResponse.json({ message: "Unauthenticated" }, { status: 403 });
   }
   if (!creatorId) {
-    return NextResponse.json(
-      {
-        message: "Invalid creatorId",
-      },
-      {
-        status: 403,
-      }
-    );
+    return NextResponse.json({ message: "Invalid creatorId" }, { status: 403 });
   }
+
+  const cacheKey = `creator:${creatorId}:streams`;
+
+  // 1. Try Redis cache
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    console.log("✅ Returning cached streams for", creatorId);
+    return NextResponse.json(JSON.parse(cached));
+  }
+
+  // 2. Fetch fresh data
   const [streams, activeStream] = await Promise.all([
-    await prismaClient.stream.findMany({
-      where: {
-        userId: creatorId,
-        played: false,
-      },
+    prismaClient.stream.findMany({
+      where: { userId: creatorId, played: false },
       include: {
-        _count: {
-          select: {
-            upvotes: true,
-          },
-        },
-        upvotes: {
-          where: {
-            userId: user.id,
-          },
-        },
+        _count: { select: { upvotes: true } },
+        upvotes: { where: { userId: user.id } },
       },
     }),
-    await prismaClient.currentStream.findFirst({
-      where: {
-        userId: creatorId,
-      },
-      include: {
-        stream: true,
-      },
+    prismaClient.currentStream.findFirst({
+      where: { userId: creatorId },
+      include: { stream: true },
     }),
   ]);
 
-  return NextResponse.json({
+  const responseData = {
     streams: streams.map(({ _count, ...rest }) => ({
       ...rest,
       upvotes: _count.upvotes,
       haveUpvoted: rest.upvotes.length ? true : false,
     })),
     activeStream,
-  });
+  };
+
+  // 3. Cache (Redis v4 syntax)
+  await redis.set(cacheKey, JSON.stringify(responseData), { EX: 300 });
+
+  return NextResponse.json(responseData);
 }
