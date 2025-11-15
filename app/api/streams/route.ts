@@ -30,10 +30,7 @@ export async function POST(req: NextRequest) {
     // Get session first
     const session = await getServerSession();
     if (!session?.user?.email) {
-      return NextResponse.json(
-        { message: "Unauthenticated" },
-        { status: 401 }
-      );
+      return NextResponse.json({ message: "Unauthenticated" }, { status: 401 });
     }
 
     // Get user from database
@@ -42,29 +39,21 @@ export async function POST(req: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { message: "User not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ message: "User not found" }, { status: 404 });
     }
 
     // Parse and validate incoming data
     const data = CreateStreamSchema.parse(await req.json());
-    const isYt = data.url.match(YT_REGEX);
+    const match = data.url.match(YT_REGEX);
 
-    if (!isYt) {
-      return NextResponse.json(
-        {
-          message: "Invalid URL",
-        },
-        {
-          status: 403,
-        }
-      );
+    if (!match) {
+      return NextResponse.json({ message: "Invalid URL" }, { status: 403 });
     }
 
     // CHECK SUBSCRIPTION LIMITS BEFORE ADDING STREAM
-    console.log(`[Streams API] Checking subscription limits for creator: ${data.creatorId}`);
+    console.log(
+      `[Streams API] Checking subscription limits for creator: ${data.creatorId}`
+    );
     const limitCheck = await checkCanAddStream(user.id, data.creatorId);
 
     if (!limitCheck.canAdd) {
@@ -87,10 +76,52 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[Streams API] Limit check passed. Current: ${limitCheck.currentCount}/${limitCheck.limit}`);
+    console.log(
+      `[Streams API] Limit check passed. Current: ${limitCheck.currentCount}/${limitCheck.limit}`
+    );
 
-    const extractedId = data.url.split("?v=")[1];
+    const extractedId = match[1];
     console.log("Extracted Video ID:", extractedId);
+
+    // Server-side embeddability check using YouTube Data API v3. If a
+    // YOUTUBE_API_KEY is provided in env, query the video's status and
+    // reject streams that have embedding disabled by the owner. If the
+    // API call fails (quota/network), fall back to allowing the add so we
+    // don't block users due to transient API issues.
+    const YT_API_KEY = process.env.YOUTUBE_API_KEY;
+    if (YT_API_KEY) {
+      try {
+        const ytRes = await fetch(
+          `https://www.googleapis.com/youtube/v3/videos?part=status&id=${extractedId}&key=${YT_API_KEY}`
+        );
+        if (ytRes.ok) {
+          const ytJson = await ytRes.json();
+          const item = ytJson.items && ytJson.items[0];
+          if (!item) {
+            return NextResponse.json(
+              { message: "Video not found." },
+              { status: 404 }
+            );
+          }
+
+          const embeddable = item.status?.embeddable;
+          if (embeddable === false) {
+            return NextResponse.json(
+              {
+                message:
+                  "Embedding for this video has been disabled by the owner.",
+              },
+              { status: 403 }
+            );
+          }
+        } else {
+          // Non-OK from YouTube API: log and continue (don't block add)
+          console.warn("YouTube API returned non-OK status:", ytRes.status);
+        }
+      } catch (e) {
+        console.warn("YouTube embeddability check failed, continuing:", e);
+      }
+    }
 
     // Default values in case API fails or times out
     const defaultSmallImg = `https://img.youtube.com/vi/${extractedId}/default.jpg`;

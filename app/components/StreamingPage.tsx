@@ -113,7 +113,7 @@ export default function StreamingPage({
 
   useEffect(() => {
     if (!videoPlayerRef.current || !playVideo) return;
-    
+
     // Clear previous error
     setPlayerError(null);
 
@@ -135,7 +135,7 @@ export default function StreamingPage({
           controls: 1,
         },
       });
-      
+
       playerRef.current = player;
 
       // Load and play video
@@ -150,12 +150,48 @@ export default function StreamingPage({
         }
       });
 
-      // Handle errors
+      // Handle errors — YouTube player provides numeric error codes.
+      // Map common codes to clearer messages and surface a fallback to
+      // open the video on YouTube.
       player.on("error", (event: any) => {
         console.error("YouTube player error:", event);
-        setPlayerError("Video unavailable. It may be restricted or removed.");
-      });
 
+        const code = event?.data;
+        let message = "Video unavailable. It may be restricted or removed.";
+
+        // See https://developers.google.com/youtube/iframe_api_reference#onError
+        if (code === 2) {
+          message = "Invalid video parameter was provided to the player.";
+        } else if (code === 5) {
+          message =
+            "The requested content cannot be played in an HTML5 player.";
+        } else if (code === 100) {
+          message =
+            "Video not found. It may have been removed or set to private.";
+        } else if (code === 101 || code === 150) {
+          message = "Embedding for this video has been disabled by the owner.";
+        }
+
+        // Additional hint when network requests are being blocked (adblockers).
+        // We previously saw net::ERR_BLOCKED_BY_CLIENT for YouTube endpoints —
+        // if a resource was blocked, suggest trying without extensions.
+        try {
+          // @ts-ignore
+          const iframePromise = player.getIframe && player.getIframe();
+          if (iframePromise && typeof iframePromise.then === "function") {
+            iframePromise.then((iframe: HTMLIFrameElement) => {
+              console.debug(
+                "YouTube iframe current src on error:",
+                iframe?.src
+              );
+            });
+          }
+        } catch (e) {
+          // ignore
+        }
+
+        setPlayerError(message);
+      });
     } catch (error) {
       console.error("Error initializing YouTube player:", error);
       setPlayerError("Failed to load video player.");
@@ -202,7 +238,7 @@ export default function StreamingPage({
 
   const playNext = async () => {
     if (queue.length === 0) return;
-    
+
     setIsPlayingNext(true);
     setPlayerError(null);
 
@@ -214,7 +250,7 @@ export default function StreamingPage({
 
       // Call API to update backend
       const response = await axios.get(`/api/streams/next`);
-      
+
       // Update with actual data from server
       if (response.data.stream) {
         setCurrentVideo(response.data.stream);
@@ -246,7 +282,7 @@ export default function StreamingPage({
       }
 
       setNewVideoUrl("");
-      
+
       // Refresh to get accurate data
       setTimeout(() => {
         refreshStreams();
@@ -254,15 +290,18 @@ export default function StreamingPage({
       }, 500);
     } catch (error: any) {
       console.error("Failed to add video:", error);
-      
+
       // Check if it's a subscription limit error
       if (error.response?.data?.limitReached) {
         setAddVideoError(
-          error.response.data.message + " " + (error.response.data.upgradeMessage || "")
+          error.response.data.message +
+            " " +
+            (error.response.data.upgradeMessage || "")
         );
       } else {
         setAddVideoError(
-          error.response?.data?.message || "Failed to add video. Please check the URL."
+          error.response?.data?.message ||
+            "Failed to add video. Please check the URL."
         );
       }
     } finally {
@@ -431,6 +470,20 @@ export default function StreamingPage({
                           >
                             Skip to Next
                           </Button>
+                          {currentVideo?.extractedId && (
+                            <Button
+                              onClick={() =>
+                                window.open(
+                                  `https://www.youtube.com/watch?v=${currentVideo.extractedId}`,
+                                  "_blank"
+                                )
+                              }
+                              variant="outline"
+                              className="mt-4 ml-2 text-white border-white/30"
+                            >
+                              Open on YouTube
+                            </Button>
+                          )}
                         </div>
                       </div>
                     )}
