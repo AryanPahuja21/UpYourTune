@@ -36,6 +36,7 @@ interface Video {
   userId: string;
   upvotes: number;
   haveUpvoted: boolean;
+  displayTitle?: string;
 }
 
 const REFRESH_INTERVAL_MS = 10 * 1000;
@@ -54,6 +55,76 @@ export default function StreamingPage({
   const [isPlayingNext, setIsPlayingNext] = useState(false);
   const [addVideoError, setAddVideoError] = useState<string | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
+  const [recommendations, setRecommendations] = useState<Video[]>([]);
+  const [loadingRecs, setLoadingRecs] = useState(false);
+
+  // Helpers for cleaning and extracting a concise song title for UI
+  const cleanForDisplay = (t: string) => {
+    if (!t) return "";
+    let s = t.replace(/\([^)]*\)|\[[^\]]*\]/g, ""); // remove parentheses/brackets
+    s = s.replace(/\s*-\s*/g, " - ");
+    // remove noisy tokens
+    s = s.replace(
+      /\b(lyrics|lyric|official|audio|music video|music|video|hd|live|remix|cover|karaoke|instrumental|visualizer|feat\.?|ft\.?|explicit|with lyrics)\b/gi,
+      ""
+    );
+    s = s.replace(/[^\w\s-]/g, " ");
+    s = s.replace(/\s+/g, " ").trim();
+    // If there is an artist prefix like "Artist - Song", prefer the right side as song
+    if (s.includes(" - ")) {
+      const parts = s.split(" - ");
+      // If left side looks like artist (contains no spaces or multiple words?), choose right side
+      return parts.slice(1).join(" - ").trim();
+    }
+    return s;
+  };
+
+  const isLikelySong = (t: string) => {
+    if (!t) return false;
+    const lower = t.toLowerCase();
+    // exclude non-music content types commonly surfaced
+    const blockers = [
+      "interview",
+      "trailer",
+      "reaction",
+      "podcast",
+      "review",
+      "episode",
+      "behind the scenes",
+      "commentary",
+      "news",
+      "vlog",
+      "episode",
+      "talk",
+    ];
+    for (const b of blockers) if (lower.includes(b)) return false;
+    return true;
+  };
+
+  // Thumbnail helper + small inline SVG placeholder
+  const PLACEHOLDER_THUMB =
+    "data:image/svg+xml;charset=UTF-8," +
+    encodeURIComponent(
+      `
+      <svg xmlns='http://www.w3.org/2000/svg' width='320' height='180' viewBox='0 0 320 180'>
+        <rect width='100%' height='100%' fill='%23efe6ff'/>
+        <g fill='%23926bff' opacity='0.7'>
+          <circle cx='90' cy='90' r='32'/>
+          <rect x='150' y='60' width='120' height='60' rx='8'/>
+        </g>
+      </svg>`
+    );
+
+  const getThumb = (item: any) => {
+    if (!item) return PLACEHOLDER_THUMB;
+    if (item.smallImg) return item.smallImg;
+    if (item.bigImg) return item.bigImg;
+    // If we have a YouTube extractedId, construct a standard thumbnail URL
+    if (item.extractedId) {
+      return `https://i.ytimg.com/vi/${item.extractedId}/mqdefault.jpg`;
+    }
+    return PLACEHOLDER_THUMB;
+  };
 
   // Subscription state
   const [subscriptionData, setSubscriptionData] = useState<any>(null);
@@ -208,6 +279,88 @@ export default function StreamingPage({
     };
   }, [currentVideo?.id, videoPlayerRef, playVideo]);
 
+  // Fetch recommendations when currentVideo changes
+  useEffect(() => {
+    const fetchRecs = async () => {
+      if (!currentVideo?.extractedId) {
+        setRecommendations([]);
+        return;
+      }
+
+      setLoadingRecs(true);
+      try {
+        // Request a small number of recommendations (4) for a concise sidebar
+        const resp = await axios.get(
+          `/api/recommendations?videoId=${
+            currentVideo.extractedId
+          }&title=${encodeURIComponent(currentVideo.title || "")}&max=4`
+        );
+        let recs = resp.data.recommendations || [];
+        // Deduplicate recommendations: exclude the current video and any
+        // videos already in the queue. Also filter out non-song content and
+        // provide a cleaned display title so only the song name shows.
+        const queueIds = new Set(queue.map((q) => q.extractedId));
+        const filtered = recs
+          .filter(
+            (r: any) =>
+              r?.extractedId &&
+              r.extractedId !== currentVideo.extractedId &&
+              !queueIds.has(r.extractedId) &&
+              isLikelySong(r.title)
+          )
+          .map((r: any) => ({
+            id: r.id,
+            type: "Youtube",
+            url: r.url,
+            extractedId: r.extractedId,
+            title: r.title,
+            displayTitle: cleanForDisplay(r.title),
+            smallImg: r.smallImg,
+            bigImg: r.bigImg,
+            active: false,
+            userId: "",
+            upvotes: 0,
+            haveUpvoted: false,
+          }))
+          .slice(0, 4);
+
+        setRecommendations(filtered);
+      } catch (e: any) {
+        console.error("Failed to fetch recommendations:", e);
+        setRecommendations([]);
+      } finally {
+        setLoadingRecs(false);
+      }
+    };
+
+    fetchRecs();
+  }, [currentVideo?.extractedId, queue]);
+
+  const addRecommendationToQueue = async (rec: Video) => {
+    try {
+      const response = await axios.post(`/api/streams`, {
+        creatorId: creatorId,
+        url: rec.url,
+      });
+      if (response.data.stream) {
+        // refresh queue
+        refreshStreams();
+      }
+    } catch (e: any) {
+      console.error("Failed to add recommended video:", e);
+      alert(e.response?.data?.message || "Failed to add recommended video");
+    }
+  };
+
+  const playRecommendationNow = async (rec: Video) => {
+    try {
+      // Optionally call server to set current stream; here we'll optimistically set
+      setCurrentVideo(rec);
+    } catch (e: any) {
+      console.error("Failed to play recommendation:", e);
+    }
+  };
+
   const handleVote = (id: any, isUpvote: boolean) => {
     // Optimistic update
     setQueue(
@@ -322,7 +475,7 @@ export default function StreamingPage({
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-50 to-pink-50">
       <header className="bg-white border-b border-purple-100 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="#" className="flex items-center space-x-2">
             <Music className="h-6 w-6 text-purple-600" />
             <span className="text-xl font-semibold text-purple-800">
@@ -381,293 +534,353 @@ export default function StreamingPage({
             </Button>
           </div>
         </div>
+
+        {/* recommendations removed from header — will render in right sidebar */}
       </header>
 
-      <main className="max-w-4xl mx-auto p-4 space-y-6">
-        {/* Subscription Banner */}
-        {subscriptionData && !loadingSubscription && (
-          <SubscriptionBanner
-            currentUsage={subscriptionData.usage.currentSongs}
-            limit={subscriptionData.limits.maxSongs}
-            plan={subscriptionData.subscription.plan}
-            type="songs"
-          />
-        )}
+      <main className="max-w-6xl mx-auto p-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            {/* Subscription Banner */}
+            {subscriptionData && !loadingSubscription && (
+              <SubscriptionBanner
+                currentUsage={subscriptionData.usage.currentSongs}
+                limit={subscriptionData.limits.maxSongs}
+                plan={subscriptionData.subscription.plan}
+                type="songs"
+              />
+            )}
 
-        {/* Subscription Info Card */}
-        {subscriptionData && !loadingSubscription && (
-          <div className="bg-white rounded-lg shadow-md p-4 border border-purple-100">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <Music className="h-5 w-5 text-purple-600" />
-                  <div>
-                    <p className="text-xs text-gray-600">Queue Usage</p>
-                    <p className="font-semibold text-gray-900">
-                      {subscriptionData.usage.currentSongs} /{" "}
-                      {subscriptionData.limits.maxSongs === -1
-                        ? "∞"
-                        : subscriptionData.limits.maxSongs}
-                    </p>
+            {/* Subscription Info Card */}
+            {subscriptionData && !loadingSubscription && (
+              <div className="bg-white rounded-lg shadow-md p-4 border border-purple-100">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <Music className="h-5 w-5 text-purple-600" />
+                      <div>
+                        <p className="text-xs text-gray-600">Queue Usage</p>
+                        <p className="font-semibold text-gray-900">
+                          {subscriptionData.usage.currentSongs} /{" "}
+                          {subscriptionData.limits.maxSongs === -1
+                            ? "∞"
+                            : subscriptionData.limits.maxSongs}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="h-8 w-px bg-gray-300" />
+
+                    <div className="flex items-center space-x-2">
+                      <Users className="h-5 w-5 text-blue-600" />
+                      <div>
+                        <p className="text-xs text-gray-600">Room Capacity</p>
+                        <p className="font-semibold text-gray-900">
+                          {subscriptionData.usage.currentMembers} /{" "}
+                          {subscriptionData.limits.maxMembers === -1
+                            ? "∞"
+                            : subscriptionData.limits.maxMembers}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <div className="h-8 w-px bg-gray-300" />
-
-                <div className="flex items-center space-x-2">
-                  <Users className="h-5 w-5 text-blue-600" />
-                  <div>
-                    <p className="text-xs text-gray-600">Room Capacity</p>
-                    <p className="font-semibold text-gray-900">
-                      {subscriptionData.usage.currentMembers} /{" "}
-                      {subscriptionData.limits.maxMembers === -1
-                        ? "∞"
-                        : subscriptionData.limits.maxMembers}
-                    </p>
-                  </div>
+                  <Link href="/subscription">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-purple-600 border-purple-300 hover:bg-purple-50 group relative"
+                    >
+                      <Info className="mr-2 h-4 w-4" />
+                      View Plans
+                      {/* Tooltip */}
+                      <span className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
+                        {subscriptionData.subscription.plan === "FREE"
+                          ? "Upgrade to BASIC or PREMIUM for more capacity!"
+                          : subscriptionData.subscription.plan === "BASIC"
+                          ? "Upgrade to PREMIUM for unlimited capacity!"
+                          : "You're on the best plan!"}
+                      </span>
+                    </Button>
+                  </Link>
                 </div>
               </div>
+            )}
 
-              <Link href="/subscription">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-purple-600 border-purple-300 hover:bg-purple-50 group relative"
-                >
-                  <Info className="mr-2 h-4 w-4" />
-                  View Plans
-                  {/* Tooltip */}
-                  <span className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
-                    {subscriptionData.subscription.plan === "FREE"
-                      ? "Upgrade to BASIC or PREMIUM for more capacity!"
-                      : subscriptionData.subscription.plan === "BASIC"
-                      ? "Upgrade to PREMIUM for unlimited capacity!"
-                      : "You're on the best plan!"}
-                  </span>
-                </Button>
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {/* Video Player */}
-        <div className="aspect-video bg-gradient-to-br from-purple-900 to-pink-900 rounded-lg overflow-hidden shadow-md flex items-center justify-center">
-          {currentVideo ? (
-            <div className="w-full h-full flex flex-col justify-between">
-              <div className="w-full h-full text-white text-center">
-                {playVideo ? (
-                  <div className="w-full h-full relative">
-                    <div ref={videoPlayerRef} className="w-full h-full" />
-                    {playerError && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
-                        <div className="text-center p-4">
-                          <AlertCircle className="h-12 w-12 text-red-400 mx-auto mb-2" />
-                          <p className="text-white">{playerError}</p>
-                          <Button
-                            onClick={playNext}
-                            className="mt-4 bg-purple-600 hover:bg-purple-700"
-                            disabled={queue.length === 0}
-                          >
-                            Skip to Next
-                          </Button>
-                          {currentVideo?.extractedId && (
-                            <Button
-                              onClick={() =>
-                                window.open(
-                                  `https://www.youtube.com/watch?v=${currentVideo.extractedId}`,
-                                  "_blank"
-                                )
-                              }
-                              variant="outline"
-                              className="mt-4 ml-2 text-white border-white/30"
-                            >
-                              Open on YouTube
-                            </Button>
-                          )}
-                        </div>
+            {/* Video Player */}
+            <div className="aspect-video bg-gradient-to-br from-purple-900 to-pink-900 rounded-lg overflow-hidden shadow-md flex items-center justify-center">
+              {currentVideo ? (
+                <div className="w-full h-full flex flex-col justify-between">
+                  <div className="w-full h-full text-white text-center">
+                    {playVideo ? (
+                      <div className="w-full h-full relative">
+                        <div ref={videoPlayerRef} className="w-full h-full" />
+                        {playerError && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
+                            <div className="text-center p-4">
+                              <AlertCircle className="h-12 w-12 text-red-400 mx-auto mb-2" />
+                              <p className="text-white">{playerError}</p>
+                              <Button
+                                onClick={playNext}
+                                className="mt-4 bg-purple-600 hover:bg-purple-700"
+                                disabled={queue.length === 0}
+                              >
+                                Skip to Next
+                              </Button>
+                              {currentVideo?.extractedId && (
+                                <Button
+                                  onClick={() =>
+                                    window.open(
+                                      `https://www.youtube.com/watch?v=${currentVideo.extractedId}`,
+                                      "_blank"
+                                    )
+                                  }
+                                  variant="outline"
+                                  className="mt-4 ml-2 text-white border-white/30"
+                                >
+                                  Open on YouTube
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center p-4">
+                        <p className="text-xl mb-4">Now Playing</p>
+                        <img
+                          src={currentVideo.bigImg}
+                          alt={currentVideo.title}
+                          className="max-w-full max-h-[80%] object-contain rounded"
+                        />
+                        <p className="mt-4 text-lg">{currentVideo.title}</p>
                       </div>
                     )}
                   </div>
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center p-4">
-                    <p className="text-xl mb-4">Now Playing</p>
-                    <img
-                      src={currentVideo.bigImg}
-                      alt={currentVideo.title}
-                      className="max-w-full max-h-[80%] object-contain rounded"
-                    />
-                    <p className="mt-4 text-lg">{currentVideo.title}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="text-white text-center">
-              <Music className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <h2 className="text-xl font-semibold mb-2">
-                Welcome to UpYourTune!
-              </h2>
-              <p>Add a song to queue to start playing</p>
-            </div>
-          )}
-        </div>
-
-        {/* Controls */}
-        {playVideo && (
-          <div className="flex justify-center">
-            <Button
-              onClick={playNext}
-              size="lg"
-              disabled={queue.length === 0 || isPlayingNext}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 shadow-md disabled:opacity-50"
-            >
-              {isPlayingNext ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading...
-                </>
+                </div>
               ) : (
-                <>
-                  <Play className="mr-2 h-5 w-5" /> Play Next
-                </>
+                <div className="text-white text-center">
+                  <Music className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                  <h2 className="text-xl font-semibold mb-2">
+                    Welcome to UpYourTune!
+                  </h2>
+                  <p>Add a song to queue to start playing</p>
+                </div>
               )}
-            </Button>
-          </div>
-        )}
-
-        {/* Add Video Form */}
-        <div className="space-y-2">
-          <div className="flex gap-2">
-            <Input
-              type="text"
-              placeholder="Paste YouTube URL here"
-              value={newVideoUrl}
-              onChange={(e) => {
-                setNewVideoUrl(e.target.value);
-                setAddVideoError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !isAddingVideo) {
-                  handleAddVideo();
-                }
-              }}
-              className="flex-grow shadow-sm"
-              disabled={
-                isAddingVideo ||
-                (subscriptionData &&
-                  subscriptionData.limits.maxSongs !== -1 &&
-                  subscriptionData.usage.currentSongs >=
-                    subscriptionData.limits.maxSongs)
-              }
-            />
-            <Button
-              onClick={handleAddVideo}
-              disabled={
-                !newVideoUrl.trim() ||
-                isAddingVideo ||
-                (subscriptionData &&
-                  subscriptionData.limits.maxSongs !== -1 &&
-                  subscriptionData.usage.currentSongs >=
-                    subscriptionData.limits.maxSongs)
-              }
-              className="bg-green-500 hover:bg-green-600 text-white shadow-sm disabled:opacity-50 relative group"
-            >
-              {isAddingVideo ? (
-                <>
-                  <Loader2 className="sm:mr-2 h-4 w-4 animate-spin" />
-                  <p className="hidden sm:block">Adding...</p>
-                </>
-              ) : (
-                <>
-                  <Plus className="sm:mr-2 h-4 w-4" />
-                  <p className="hidden sm:block">Add to Queue</p>
-                </>
-              )}
-              {/* Tooltip for disabled state */}
-              {subscriptionData &&
-                subscriptionData.limits.maxSongs !== -1 &&
-                subscriptionData.usage.currentSongs >=
-                  subscriptionData.limits.maxSongs && (
-                  <span className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
-                    Queue limit reached! Upgrade to add more.
-                  </span>
-                )}
-            </Button>
-          </div>
-          {addVideoError && (
-            <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 p-3 rounded border border-red-200">
-              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-              <div className="flex-grow">
-                <span>{addVideoError}</span>
-                {addVideoError.includes("Upgrade") && (
-                  <Link href="/subscription">
-                    <Button
-                      size="sm"
-                      className="mt-2 bg-purple-600 hover:bg-purple-700 text-white text-xs"
-                    >
-                      <Crown className="mr-1 h-3 w-3" />
-                      View Plans
-                    </Button>
-                  </Link>
-                )}
-              </div>
             </div>
-          )}
-        </div>
 
-        {/* Queue */}
-        <div className="bg-white rounded-lg shadow-md p-4 border border-purple-100">
-          <h2 className="text-lg font-semibold mb-4 text-purple-800">
-            Up Next ({queue.length})
-          </h2>
-          {queue.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Music className="h-12 w-12 mx-auto mb-2 opacity-30" />
-              <p>Queue is empty. Add some videos!</p>
-            </div>
-          ) : (
-            <ul className="space-y-4">
-              {queue.map((video, index) => (
-                <li
-                  key={video.id}
-                  className={`flex items-center gap-4 p-2 rounded-md transition-colors ${
-                    index === 0
-                      ? "bg-purple-100"
-                      : "bg-purple-50 hover:bg-purple-100"
-                  }`}
+            {/* Controls */}
+            {playVideo && (
+              <div className="flex justify-center">
+                <Button
+                  onClick={playNext}
+                  size="lg"
+                  disabled={queue.length === 0 || isPlayingNext}
+                  className="bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 shadow-md disabled:opacity-50"
                 >
-                  <img
-                    src={video.smallImg}
-                    alt={video.title}
-                    className="w-20 h-12 object-cover rounded shadow-sm"
-                  />
-                  <div className="flex-grow">
-                    <h3 className="font-medium text-purple-900">
-                      {video.title}
-                    </h3>
-                    <p className="text-sm text-purple-600">
-                      {video.upvotes} votes
-                    </p>
-                  </div>
-                  <Button
-                    onClick={() =>
-                      handleVote(video.id, video.haveUpvoted ? false : true)
+                  {isPlayingNext ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />{" "}
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="mr-2 h-5 w-5" /> Play Next
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {/* Add Video Form */}
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  placeholder="Paste YouTube URL here"
+                  value={newVideoUrl}
+                  onChange={(e) => {
+                    setNewVideoUrl(e.target.value);
+                    setAddVideoError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !isAddingVideo) {
+                      handleAddVideo();
                     }
-                    variant="outline"
-                    size="sm"
-                    className={`text-purple-600  ${
-                      video.haveUpvoted && "bg-purple-500 text-white"
-                    } border-purple-300 hover:bg-purple-100 shadow-sm`}
-                  >
-                    {video.haveUpvoted ? (
-                      <ThumbsDown className="h-4 w-4" />
-                    ) : (
-                      <ThumbsUp className="h-4 w-4" />
+                  }}
+                  className="flex-grow shadow-sm"
+                  disabled={
+                    isAddingVideo ||
+                    (subscriptionData &&
+                      subscriptionData.limits.maxSongs !== -1 &&
+                      subscriptionData.usage.currentSongs >=
+                        subscriptionData.limits.maxSongs)
+                  }
+                />
+                <Button
+                  onClick={handleAddVideo}
+                  disabled={
+                    !newVideoUrl.trim() ||
+                    isAddingVideo ||
+                    (subscriptionData &&
+                      subscriptionData.limits.maxSongs !== -1 &&
+                      subscriptionData.usage.currentSongs >=
+                        subscriptionData.limits.maxSongs)
+                  }
+                  className="bg-green-500 hover:bg-green-600 text-white shadow-sm disabled:opacity-50 relative group"
+                >
+                  {isAddingVideo ? (
+                    <>
+                      <Loader2 className="sm:mr-2 h-4 w-4 animate-spin" />
+                      <p className="hidden sm:block">Adding...</p>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="sm:mr-2 h-4 w-4" />
+                      <p className="hidden sm:block">Add to Queue</p>
+                    </>
+                  )}
+                  {/* Tooltip for disabled state */}
+                  {subscriptionData &&
+                    subscriptionData.limits.maxSongs !== -1 &&
+                    subscriptionData.usage.currentSongs >=
+                      subscriptionData.limits.maxSongs && (
+                      <span className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap">
+                        Queue limit reached! Upgrade to add more.
+                      </span>
                     )}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
+                </Button>
+              </div>
+              {addVideoError && (
+                <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 p-3 rounded border border-red-200">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <div className="flex-grow">
+                    <span>{addVideoError}</span>
+                    {addVideoError.includes("Upgrade") && (
+                      <Link href="/subscription">
+                        <Button
+                          size="sm"
+                          className="mt-2 bg-purple-600 hover:bg-purple-700 text-white text-xs"
+                        >
+                          <Crown className="mr-1 h-3 w-3" />
+                          View Plans
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Queue (Up Next) */}
+            <div className="bg-white rounded-lg shadow-md p-4 border border-purple-100">
+              <h2 className="text-lg font-semibold mb-4 text-purple-800">
+                Up Next ({queue.length})
+              </h2>
+              {queue.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Music className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                  <p>Queue is empty. Add some videos!</p>
+                </div>
+              ) : (
+                <ul className="space-y-4">
+                  {queue.map((video, index) => (
+                    <li
+                      key={video.id}
+                      className={`flex items-center gap-4 p-2 rounded-md transition-colors ${
+                        index === 0
+                          ? "bg-purple-100"
+                          : "bg-purple-50 hover:bg-purple-100"
+                      }`}
+                    >
+                      <img
+                        src={getThumb(video)}
+                        alt={video.title}
+                        onError={(e) => (e.currentTarget.src = getThumb(null))}
+                        className="w-20 h-12 object-cover rounded shadow-sm"
+                      />
+                      <div className="flex-grow">
+                        <h3 className="font-medium text-purple-900">
+                          {video.title}
+                        </h3>
+                        <p className="text-sm text-purple-600">
+                          {video.upvotes} votes
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() =>
+                          handleVote(video.id, video.haveUpvoted ? false : true)
+                        }
+                        variant="outline"
+                        size="sm"
+                        className={`text-purple-600  ${
+                          video.haveUpvoted && "bg-purple-500 text-white"
+                        } border-purple-300 hover:bg-purple-100 shadow-sm`}
+                      >
+                        {video.haveUpvoted ? (
+                          <ThumbsDown className="h-4 w-4" />
+                        ) : (
+                          <ThumbsUp className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          {/* Right sidebar — Recommendations */}
+          <aside className="lg:col-span-1">
+            <div className="sticky top-6">
+              <div className="bg-white rounded-lg shadow-md p-4 border border-purple-100">
+                <h2 className="text-lg font-semibold mb-4 text-purple-800">
+                  Recommended for you
+                </h2>
+                {loadingRecs ? (
+                  <div className="text-center py-6">
+                    <Loader2 className="mx-auto animate-spin" />
+                  </div>
+                ) : recommendations.length === 0 ? (
+                  <div className="text-center py-6 text-gray-500">
+                    No recommendations available.
+                  </div>
+                ) : (
+                  <ul className="space-y-3 max-h-80 overflow-y-auto">
+                    {recommendations.map((rec) => (
+                      <li
+                        key={rec.id}
+                        className="flex items-center gap-3 p-2 rounded-md hover:bg-purple-50 h-20"
+                      >
+                        <img
+                          src={getThumb(rec)}
+                          alt={rec.displayTitle || rec.title}
+                          onError={(e) =>
+                            (e.currentTarget.src = getThumb(null))
+                          }
+                          className="w-20 h-12 object-cover rounded shadow-sm flex-shrink-0"
+                        />
+                        <div className="flex-grow min-w-0">
+                          <h3 className="font-medium text-purple-900 text-sm truncate">
+                            {rec.displayTitle || rec.title}
+                          </h3>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => addRecommendationToQueue(rec)}
+                            className="bg-green-500 text-white hover:bg-green-600 flex-shrink-0 w-20"
+                          >
+                            Add
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </aside>
         </div>
       </main>
     </div>
