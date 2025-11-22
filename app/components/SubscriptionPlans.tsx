@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Crown, Star, Check, Loader2, Zap } from "lucide-react";
 import axios from "axios";
+import CryptoSubscription from "@/app/components/CryptoSubscription";
 
 interface Plan {
   id: string;
@@ -73,6 +74,9 @@ export default function SubscriptionPlans({
 
   const [upgradingPlan, setUpgradingPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedPlanForPayment, setSelectedPlanForPayment] = useState<
+    string | null
+  >(null);
 
   const handleUpgrade = async (planId: string) => {
     setUpgradingPlan(planId);
@@ -166,6 +170,35 @@ export default function SubscriptionPlans({
     );
   };
 
+  const handleChangePlan = async (planId: string) => {
+    // If it's a paid plan, open the wallet payment flow instead of directly calling API
+    const planObj = plans.find((p) => p.id === planId);
+    if (!planObj) return;
+
+    // If price > 0, require on-chain payment flow
+    if (planObj.price && planObj.price > 0) {
+      setSelectedPlanForPayment(planId);
+      return;
+    }
+
+    setUpgradingPlan(planId);
+    setError(null);
+
+    try {
+      const response = await axios.post("/api/subscription", { plan: planId });
+      if (response.data) {
+        alert(`Plan changed to ${planId}`);
+        if (onUpgradeSuccess) onUpgradeSuccess();
+        window.location.reload();
+      }
+    } catch (error: any) {
+      console.error("Change plan failed:", error);
+      setError(error.response?.data?.message || "Failed to change plan.");
+    } finally {
+      setUpgradingPlan(null);
+    }
+  };
+
   return (
     <div className="w-full">
       {error && (
@@ -252,12 +285,8 @@ export default function SubscriptionPlans({
 
             {/* Action Button */}
             <Button
-              onClick={() => handleUpgrade(plan.id)}
-              disabled={
-                isCurrentPlan(plan.id) ||
-                upgradingPlan !== null ||
-                isDowngrade(plan.id)
-              }
+              onClick={() => handleChangePlan(plan.id)}
+              disabled={isCurrentPlan(plan.id) || upgradingPlan !== null}
               className={`w-full ${getPlanButtonColor(
                 plan.id
               )} text-white font-semibold py-3 rounded-lg shadow-md transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -269,23 +298,52 @@ export default function SubscriptionPlans({
                 </>
               ) : isCurrentPlan(plan.id) ? (
                 "Current Plan"
-              ) : isDowngrade(plan.id) ? (
-                "Downgrade (Contact Support)"
               ) : plan.id === "FREE" ? (
-                "Downgrade to Free"
+                "Change to Free"
               ) : (
-                `Upgrade to ${plan.name}`
+                `Choose ${plan.name}`
               )}
             </Button>
           </div>
         ))}
       </div>
 
+      {/* Inline payment area for selected paid plan */}
+      {selectedPlanForPayment && (
+        <div className="mt-6 bg-white p-4 rounded-lg border border-gray-200">
+          <div className="flex items-center justify-between">
+            <h4 className="font-semibold">
+              Complete payment for {selectedPlanForPayment}
+            </h4>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSelectedPlanForPayment(null)}
+            >
+              Cancel
+            </Button>
+          </div>
+          <div className="mt-4">
+            {/* Determine SOL amount: use env overrides if present, otherwise small defaults */}
+            <CryptoSubscription
+              plan={selectedPlanForPayment as "BASIC" | "PREMIUM"}
+              amount={
+                selectedPlanForPayment === "BASIC"
+                  ? process.env.NEXT_PUBLIC_PLAN_SOL_BASIC || "0.01"
+                  : process.env.NEXT_PUBLIC_PLAN_SOL_PREMIUM || "0.02"
+              }
+            />
+          </div>
+        </div>
+      )}
+
       {/* Additional Info */}
       <div className="mt-8 text-center text-gray-600 text-sm">
         <p>
           💳 All plans include a 30-day money-back guarantee.{" "}
-          <span className="font-semibold">No credit card required for Free plan.</span>
+          <span className="font-semibold">
+            No credit card required for Free plan.
+          </span>
         </p>
         <p className="mt-2">
           📧 Need help choosing? Contact us at{" "}
