@@ -132,6 +132,7 @@ export default function StreamingPage({
 
   const videoPlayerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
+  const queueRef = useRef<Video[]>([]);
 
   const refreshStreams = async () => {
     try {
@@ -181,6 +182,12 @@ export default function StreamingPage({
     }, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
+
+  // Keep a stable snapshot of the queue for uses where we don't want
+  // queue changes to re-trigger effects (e.g. recommendations fetch).
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
 
   useEffect(() => {
     if (!videoPlayerRef.current || !playVideo) return;
@@ -281,13 +288,16 @@ export default function StreamingPage({
 
   // Fetch recommendations when currentVideo changes
   useEffect(() => {
+    // Use a cancellation flag to avoid setting state after unmount
+    let cancelled = false;
+
     const fetchRecs = async () => {
       if (!currentVideo?.extractedId) {
-        setRecommendations([]);
+        if (!cancelled) setRecommendations([]);
         return;
       }
 
-      setLoadingRecs(true);
+      if (!cancelled) setLoadingRecs(true);
       try {
         // Request a small number of recommendations (4) for a concise sidebar
         const resp = await axios.get(
@@ -297,9 +307,12 @@ export default function StreamingPage({
         );
         let recs = resp.data.recommendations || [];
         // Deduplicate recommendations: exclude the current video and any
-        // videos already in the queue. Also filter out non-song content and
-        // provide a cleaned display title so only the song name shows.
-        const queueIds = new Set(queue.map((q) => q.extractedId));
+        // videos already in the queue. Use a stable snapshot of the queue
+        // via `queueRef` so we don't re-run this effect whenever `queue`
+        // changes (which was causing continuous refreshes).
+        const queueIds = new Set(
+          (queueRef.current || []).map((q) => q.extractedId)
+        );
         const filtered = recs
           .filter(
             (r: any) =>
@@ -324,17 +337,21 @@ export default function StreamingPage({
           }))
           .slice(0, 4);
 
-        setRecommendations(filtered);
+        if (!cancelled) setRecommendations(filtered);
       } catch (e: any) {
         console.error("Failed to fetch recommendations:", e);
-        setRecommendations([]);
+        if (!cancelled) setRecommendations([]);
       } finally {
-        setLoadingRecs(false);
+        if (!cancelled) setLoadingRecs(false);
       }
     };
 
     fetchRecs();
-  }, [currentVideo?.extractedId, queue]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentVideo?.extractedId]);
 
   const addRecommendationToQueue = async (rec: Video) => {
     try {
