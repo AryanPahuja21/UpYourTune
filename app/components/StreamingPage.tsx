@@ -57,6 +57,8 @@ export default function StreamingPage({
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<Video[]>([]);
   const [loadingRecs, setLoadingRecs] = useState(false);
+  const [addingIds, setAddingIds] = useState<string[]>([]);
+  const [addedIds, setAddedIds] = useState<string[]>([]);
 
   // Helpers for cleaning and extracting a concise song title for UI
   const cleanForDisplay = (t: string) => {
@@ -299,11 +301,12 @@ export default function StreamingPage({
 
       if (!cancelled) setLoadingRecs(true);
       try {
-        // Request a small number of recommendations (4) for a concise sidebar
+        // Request a larger set of recommendations to populate the full sidebar
+        // (server may return more than we display; request plenty to improve variety)
         const resp = await axios.get(
           `/api/recommendations?videoId=${
             currentVideo.extractedId
-          }&title=${encodeURIComponent(currentVideo.title || "")}&max=4`
+          }&title=${encodeURIComponent(currentVideo.title || "")}&max=20`
         );
         let recs = resp.data.recommendations || [];
         // Deduplicate recommendations: exclude the current video and any
@@ -335,7 +338,7 @@ export default function StreamingPage({
             upvotes: 0,
             haveUpvoted: false,
           }))
-          .slice(0, 4);
+          .slice(0, 12);
 
         if (!cancelled) setRecommendations(filtered);
       } catch (e: any) {
@@ -354,6 +357,13 @@ export default function StreamingPage({
   }, [currentVideo?.extractedId]);
 
   const addRecommendationToQueue = async (rec: Video) => {
+    // avoid duplicate clicks
+    if (
+      addingIds.includes(rec.extractedId) ||
+      addedIds.includes(rec.extractedId)
+    )
+      return;
+    setAddingIds((s) => [...s, rec.extractedId]);
     try {
       const response = await axios.post(`/api/streams`, {
         creatorId: creatorId,
@@ -362,10 +372,20 @@ export default function StreamingPage({
       if (response.data.stream) {
         // refresh queue
         refreshStreams();
+        // mark as added so UI shows confirmation
+        setAddedIds((s) => [...s, rec.extractedId]);
+        // remove from adding
+        setAddingIds((s) => s.filter((id) => id !== rec.extractedId));
+        // optionally keep "Added" state for a short time then remove
+        setTimeout(() => {
+          setAddedIds((s) => s.filter((id) => id !== rec.extractedId));
+        }, 5000);
       }
     } catch (e: any) {
       console.error("Failed to add recommended video:", e);
       alert(e.response?.data?.message || "Failed to add recommended video");
+      // remove from adding on error
+      setAddingIds((s) => s.filter((id) => id !== rec.extractedId));
     }
   };
 
@@ -863,11 +883,15 @@ export default function StreamingPage({
                     No recommendations available.
                   </div>
                 ) : (
-                  <ul className="space-y-3 max-h-80 overflow-y-auto">
+                  <ul className="space-y-3 max-h-[calc(100vh-6rem)] overflow-y-auto">
                     {recommendations.map((rec) => (
                       <li
                         key={rec.id}
-                        className="flex items-center gap-3 p-2 rounded-md hover:bg-purple-50 h-20"
+                        className={`flex items-center gap-3 p-2 rounded-md hover:bg-purple-50 h-16 transition-transform ${
+                          addingIds.includes(rec.extractedId)
+                            ? "scale-[1.01] bg-purple-50"
+                            : ""
+                        }`}
                       >
                         <img
                           src={getThumb(rec)}
@@ -875,7 +899,7 @@ export default function StreamingPage({
                           onError={(e) =>
                             (e.currentTarget.src = getThumb(null))
                           }
-                          className="w-20 h-12 object-cover rounded shadow-sm flex-shrink-0"
+                          className="w-16 h-10 object-cover rounded shadow-sm flex-shrink-0"
                         />
                         <div className="flex-grow min-w-0">
                           <h3 className="font-medium text-purple-900 text-sm truncate">
@@ -886,9 +910,26 @@ export default function StreamingPage({
                           <Button
                             size="sm"
                             onClick={() => addRecommendationToQueue(rec)}
-                            className="bg-green-500 text-white hover:bg-green-600 flex-shrink-0 w-20"
+                            className={`bg-green-500 text-white hover:bg-green-600 flex-shrink-0 w-16 flex items-center justify-center space-x-1 ${
+                              addingIds.includes(rec.extractedId)
+                                ? "opacity-90"
+                                : ""
+                            }`}
+                            disabled={
+                              addingIds.includes(rec.extractedId) ||
+                              addedIds.includes(rec.extractedId)
+                            }
                           >
-                            Add
+                            {addingIds.includes(rec.extractedId) ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span className="text-xs">Adding</span>
+                              </>
+                            ) : addedIds.includes(rec.extractedId) ? (
+                              <span className="text-xs">Added</span>
+                            ) : (
+                              <span className="text-xs">Add</span>
+                            )}
                           </Button>
                         </div>
                       </li>
